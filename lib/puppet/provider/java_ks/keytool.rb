@@ -58,15 +58,21 @@ Puppet::Type.type(:java_ks).provide(:keytool) do
     tmpfile
   end
 
-  # Where we actually to the import of the file created using to_pkcs12.
+  # Convert key and certificates to pkcs12 and import
   def import_ks
     tmppk12 = Tempfile.new("#{@resource[:name]}.")
     to_pkcs12(tmppk12.path)
+    import_pkcs12 tmppk12.path
+    tmppk12.close!
+  end
+
+  # Where we actually do the import of the pkcs12.
+  def import_pkcs12(pkcs12)
     cmd = [
         command_keytool,
         '-importkeystore', '-srcstoretype', 'PKCS12',
         '-destkeystore', @resource[:target],
-        '-srckeystore', tmppk12.path,
+        '-srckeystore', pkcs12,
         '-alias', @resource[:name]
     ]
     cmd << '-trustcacerts' if @resource[:trustcacerts] == :true
@@ -74,7 +80,6 @@ Puppet::Type.type(:java_ks).provide(:keytool) do
 
     pwfile = password_file
     run_command(cmd, @resource[:target], pwfile)
-    tmppk12.close!
     pwfile.close! if pwfile.is_a? Tempfile
   end
 
@@ -122,11 +127,24 @@ Puppet::Type.type(:java_ks).provide(:keytool) do
     if Puppet[:noop] and !File.exists?(certificate)
       return 'latest'
     else
-      cmd = [
-          command_keytool,
-          '-v', '-printcert', '-file', certificate
-      ]
-      output = run_command(cmd)
+      if srctype == :pkcs12
+        cmd = [
+            command_keytool,
+            '-list', '-v',
+            '-keystore', certificate,
+            '-alias', @resource[:name],
+            '-storetype', 'pkcs12'
+        ]
+        tmpfile = password_file
+        output = run_command(cmd, false, tmpfile)
+        tmpfile.close!
+      else
+        cmd = [
+            command_keytool,
+            '-v', '-printcert', '-file', certificate
+        ]
+        output = run_command(cmd)
+      end
       latest = output.scan(/MD5:\s+(.*)/)[0][0]
       return latest
     end
@@ -162,6 +180,8 @@ Puppet::Type.type(:java_ks).provide(:keytool) do
       raise Puppet::Error, 'Keytool is not capable of importing a private key without an accomapaning certificate.'
     elsif storetype == "jceks"
       import_jceks
+    elsif srctype == :pkcs12
+      import_pkcs12 certificate
     else
       cmd = [
           command_keytool,
@@ -209,6 +229,10 @@ Puppet::Type.type(:java_ks).provide(:keytool) do
 
   def storetype
     @resource[:storetype]
+  end
+
+  def srctype
+    @resource[:srctype]
   end
 
   def run_command(cmd, target=false, stdinfile=false, env={})

@@ -77,6 +77,14 @@ Puppet::Type.newtype(:java_ks) do
     newvalues(:jceks)
   end
 
+  newparam(:srctype) do
+    desc 'Optional source type. If set to pkcs12, specify the file in the certificate field.
+      It must be protected with the same password as the target store.
+      Valid options: <pkcs12>'
+
+    newvalues(:pkcs12)
+  end
+
   newparam(:private_key) do
     desc 'If you want an application to be a server and encrypt traffic,
       you will need a private key.  Private key entries in a keystore must be
